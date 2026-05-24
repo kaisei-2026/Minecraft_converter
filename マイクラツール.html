@@ -1,0 +1,375 @@
+<!-- 外部ライブラリ: JSZip -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<div id="mc-converter-app" class="mc-converter-container">
+  <style>
+    :root {
+      --primary: #2ecc71;
+      --primary-hover: #27ae60;
+      --bg-color: #f5f6fa;
+      --card-bg: #ffffff;
+      --text-color: #2f3640;
+      --border-color: #dcdde1;
+      --accent-ee: #2196f3;
+      --accent-be: #ff9800;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-color: #1e272e;
+        --card-bg: #2f3640;
+        --text-color: #f5f6fa;
+        --border-color: #485460;
+      }
+    }
+
+    .mc-converter-container {
+      font-family: 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 20px auto;
+      padding: 20px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      border-radius: 12px;
+      line-height: 1.6;
+    }
+
+    /* タブ（セグメントボタン） */
+    .mode-selector {
+      display: flex;
+      background: var(--border-color);
+      padding: 4px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .mode-tab {
+      flex: 1;
+      border: none;
+      padding: 10px;
+      cursor: pointer;
+      border-radius: 6px;
+      font-weight: bold;
+      transition: 0.3s;
+      background: transparent;
+      color: var(--text-color);
+    }
+
+    .mode-tab.active[data-mode="be2ee"] { background: var(--accent-ee); color: white; }
+    .mode-tab.active[data-mode="ee2be"] { background: var(--accent-be); color: white; }
+
+    /* 説明文 */
+    .description-box {
+      background: var(--card-bg);
+      padding: 15px;
+      border-left: 4px solid var(--primary);
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+
+    /* アップロードエリア */
+    .drop-zone {
+      border: 3px dashed var(--border-color);
+      padding: 40px;
+      text-align: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: 0.3s;
+      background: var(--card-bg);
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--primary);
+      background: rgba(46, 204, 113, 0.1);
+    }
+
+    /* プログレスバー */
+    .progress-container {
+      margin-top: 20px;
+      display: none;
+    }
+
+    .progress-bar {
+      height: 10px;
+      background: var(--border-color);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--primary);
+      transition: width 0.3s;
+    }
+
+    /* 結果ログ */
+    .result-log {
+      margin-top: 20px;
+      padding: 15px;
+      background: #000;
+      color: #00ff00;
+      font-family: monospace;
+      border-radius: 6px;
+      display: none;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .error-msg {
+      color: #ff4757;
+      background: rgba(255, 71, 87, 0.1);
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+      display: none;
+    }
+
+    /* 下部ステップ */
+    .steps-footer {
+      margin-top: 30px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 15px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 20px;
+    }
+
+    .step-item {
+      text-align: center;
+      font-size: 0.9em;
+    }
+
+    .step-num {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      background: var(--primary);
+      color: white;
+      border-radius: 50%;
+      margin-bottom: 5px;
+    }
+  </style>
+
+  <div class="mode-selector" id="modeSelector">
+    <button class="mode-tab active" data-mode="be2ee">Bedrock → Education</button>
+    <button class="mode-tab" data-mode="ee2be">Education → Bedrock</button>
+  </div>
+
+  <div class="description-box" id="modeDesc">
+    <b>BE → EE 変換:</b> 統合版の世界に教育版機能を有効化します（化学機能の追加など）。
+  </div>
+
+  <div class="drop-zone" id="dropZone">
+    <p>ここに .mcworld ファイルをドラッグ＆ドロップ</p>
+    <p>またはクリックしてファイルを選択</p>
+    <input type="file" id="fileInput" accept=".mcworld" style="display:none">
+  </div>
+
+  <div id="errorArea" class="error-msg"></div>
+
+  <div class="progress-container" id="progressContainer">
+    <p id="statusText">処理中...</p>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="result-log" id="resultLog"></div>
+
+  <div class="steps-footer">
+    <div class="step-item"><span class="step-num">1</span><br>変換モードを選択</div>
+    <div class="step-item"><span class="step-num">2</span><br>.mcworld を投入</div>
+    <div class="step-item"><span class="step-num">3</span><br>変換後ファイルを保存</div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const modeTabs = document.querySelectorAll('.mode-tab');
+  const modeDesc = document.getElementById('modeDesc');
+  const progressContainer = document.getElementById('progressContainer');
+  const progressFill = document.getElementById('progressFill');
+  const statusText = document.getElementById('statusText');
+  const resultLog = document.getElementById('resultLog');
+  const errorArea = document.getElementById('errorArea');
+
+  let currentMode = 'be2ee';
+
+  // モード切り替え
+  modeTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      modeTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentMode = tab.dataset.mode;
+      
+      if (currentMode === 'be2ee') {
+        modeDesc.innerHTML = "<b>BE → EE 変換:</b> 統合版の世界に教育版機能を有効化します（化学機能の追加など）。";
+      } else {
+        modeDesc.innerHTML = "<b>EE → BE 変換:</b> 教育版の世界から教育専用フラグを削除し、統合版標準に戻します。";
+      }
+      resetUI();
+    });
+  });
+
+  // ファイル選択イベント
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  function resetUI() {
+    progressContainer.style.display = 'none';
+    resultLog.style.display = 'none';
+    errorArea.style.display = 'none';
+    resultLog.innerHTML = '';
+  }
+
+  function log(msg, isSuccess = true) {
+    resultLog.style.display = 'block';
+    const div = document.createElement('div');
+    div.textContent = (isSuccess ? '✓ ' : '！ ') + msg;
+    resultLog.appendChild(div);
+  }
+
+  async function handleFile(file) {
+    if (!file.name.endsWith('.mcworld')) {
+      showError('有効な .mcworld ファイルを選択してください。');
+      return;
+    }
+
+    resetUI();
+    progressContainer.style.display = 'block';
+    updateProgress(10, 'ZIPファイルを読み込み中...');
+
+    try {
+      const zip = new JSZip();
+      const contents = await zip.loadAsync(file);
+      
+      updateProgress(30, 'manifest.json を処理中...');
+      await processManifest(zip);
+
+      updateProgress(60, 'level.dat を処理中...');
+      await processLevelDat(zip);
+
+      updateProgress(80, '再圧縮中...');
+      const blob = await zip.generateAsync({ type: 'blob' });
+      
+      updateProgress(100, '完了！');
+      downloadFile(blob, file.name);
+    } catch (err) {
+      showError('エラーが発生しました: ' + err.message);
+    }
+  }
+
+  function updateProgress(percent, text) {
+    progressFill.style.width = percent + '%';
+    statusText.textContent = text;
+  }
+
+  function showError(msg) {
+    errorArea.textContent = msg;
+    errorArea.style.display = 'block';
+    progressContainer.style.display = 'none';
+  }
+
+  // manifest.json の書き換え
+  async function processManifest(zip) {
+    const manifestFile = Object.keys(zip.files).find(path => path.endsWith('manifest.json'));
+    if (!manifestFile) {
+      log('manifest.json が見つかりませんでした。スキップします。', false);
+      return;
+    }
+
+    const content = await zip.file(manifestFile).async('string');
+    let json = JSON.parse(content);
+    
+    if (!json.capabilities) json.capabilities = [];
+
+    const targetCaps = ["experimental_custom_ui", "chemistry"];
+    
+    if (currentMode === 'be2ee') {
+      targetCaps.forEach(cap => {
+        if (!json.capabilities.includes(cap)) {
+          json.capabilities.push(cap);
+          log(`manifest: ${cap} を追加しました`);
+        }
+      });
+    } else {
+      const originalLen = json.capabilities.length;
+      json.capabilities = json.capabilities.filter(cap => !targetCaps.includes(cap));
+      if (originalLen !== json.capabilities.length) {
+        log(`manifest: 教育版機能を削除しました`);
+      }
+    }
+
+    zip.file(manifestFile, JSON.stringify(json, null, 2));
+  }
+
+  // level.dat のバイナリ書き換え
+  async function processLevelDat(zip) {
+    const levelDatFile = Object.keys(zip.files).find(path => path.endsWith('level.dat'));
+    if (!levelDatFile) {
+      log('level.dat が見つかりませんでした。', false);
+      return;
+    }
+
+    const buffer = await zip.file(levelDatFile).async('uint8array');
+    // NBT構造内の "eduOffer" (Little Endian) を検索
+    // 文字列 "eduOffer" の 16進数: 65 64 75 4f 66 66 65 72
+    const pattern = [0x65, 0x64, 0x75, 0x4f, 0x66, 0x66, 0x65, 0x72];
+    let found = false;
+
+    for (let i = 0; i < buffer.length - pattern.length; i++) {
+      let match = true;
+      for (let j = 0; j < pattern.length; j++) {
+        if (buffer[i + j] !== pattern[j]) {
+          match = false;
+          break;
+        }
+      }
+
+      if (match) {
+        // 名前(eduOffer)の直後、または数バイト後に値がある
+        // 統合版NBT(Little Endian)では、通常 [TAG_Byte][Len_Low][Len_High][eduOffer][Value]
+        // もしくは [TAG_Int]...
+        // 簡易的に "eduOffer" 文字列の直後の1バイトをフラグとして更新
+        const valueIndex = i + pattern.length;
+        if (valueIndex < buffer.length) {
+          buffer[valueIndex] = (currentMode === 'be2ee' ? 1 : 0);
+          found = true;
+          log(`level.dat: eduOffer フラグを ${buffer[valueIndex]} に更新しました`);
+          break;
+        }
+      }
+    }
+
+    if (!found) {
+      log('level.dat: eduOffer タグが見つかりませんでした。新規作成は行いません。', false);
+    }
+    zip.file(levelDatFile, buffer);
+  }
+
+  function downloadFile(blob, originalName) {
+    const suffix = currentMode === 'be2ee' ? '_EE' : '_BE';
+    const newName = originalName.replace('.mcworld', '') + suffix + '.mcworld';
+    
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = newName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    log(`ファイル "${newName}" をダウンロードしました`);
+  }
+})();
+</script>
